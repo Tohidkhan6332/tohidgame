@@ -1,7 +1,7 @@
-import TriviaGame from './TriviaGame';
+import TohidGame from './TohidGame';
 
 function App() {
-  return <TriviaGame />;
+  return <TohidGame />;
 }
 
 export default App;
