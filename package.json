@@ -22,7 +22,7 @@
  "predeploy": "npm run build",
  "deploy": "gh-pages -d build"
 },
-"homepage": "https://Tohidkhan6332.github.io/tohidgame",
+"homepage": "https://tohidgame.vercel.app/",
 "browserslist": {
  "production": [
    ">0.2%",
