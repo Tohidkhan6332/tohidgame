@@ -9,7 +9,7 @@
 
 ## 📸 Screenshots
 
-![App Screenshot](./public/screenshot.png) 
+![App Screenshot](./public/TohidGame.png) 
 *(Note: Upload a screenshot of your app to the public folder for this image to show)*
 
 ## ✨ Features
