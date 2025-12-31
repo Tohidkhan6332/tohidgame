@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-// IMPORT THE DATA HERE (Ensure questionsData.js is in the same folder)
-import { fallbackQuestions } from './questionsData'; 
+// IMPORT THE DATA HERE (Ensure TohidData.js is in the same folder)
+import { fallbackQuestions } from './TohidData'; 
 
 const TohidGame = () => {
   const [gameState, setGameState] = useState('setup'); // setup, loading, playing, results
@@ -220,7 +220,7 @@ const TohidGame = () => {
             </div>
 
             {/* Main Card */}
-            <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl p-6 sm:p-10">
+            <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl p-6 sm:p-10 mb-12">
               
               {/* Categories */}
               <div className="mb-10">
@@ -301,6 +301,51 @@ const TohidGame = () => {
                 Start Challenge 🚀
               </button>
             </div>
+
+            {/* --- DEVELOPER PROFILE SECTION --- */}
+            <div className="bg-slate-900/80 backdrop-blur rounded-3xl border border-white/5 p-8 text-center">
+              <div className="flex flex-col items-center">
+                <img 
+                  src="https://github.com/Tohidkhan6332.png" 
+                  alt="Tohid Khan" 
+                  className="w-24 h-24 rounded-full border-4 border-cyan-500 shadow-[0_0_20px_rgba(34,211,238,0.3)] mb-4"
+                />
+                <h3 className="text-2xl font-black text-white tracking-wide">TOHID GAME</h3>
+                <p className="text-cyan-400 font-mono text-sm mb-6">HARYANA, INDIA 🇮🇳</p>
+                
+                {/* Social Links */}
+                <div className="flex flex-wrap justify-center gap-4 mb-6">
+                  <a href="https://whatsapp.com/channel/0029VaGyP933bbVC7G0x0i2T" target="_blank" rel="noreferrer" 
+                     className="px-4 py-2 bg-green-600/20 text-green-400 border border-green-500/50 rounded-lg hover:bg-green-600 hover:text-white transition-all">
+                    Tohid Tech Channel
+                  </a>
+                  <a href="https://chat.whatsapp.com/HUEyTVIQ7Ij1gFs6aZkbMk" target="_blank" rel="noreferrer" 
+                     className="px-4 py-2 bg-green-500/20 text-green-400 border border-green-500/50 rounded-lg hover:bg-green-500 hover:text-white transition-all">
+                    Bot Testing Group
+                  </a>
+                  <a href="https://github.com/Tohidkhan6332" target="_blank" rel="noreferrer" 
+                     className="px-4 py-2 bg-slate-700/50 text-white border border-slate-600 rounded-lg hover:bg-slate-700 transition-all">
+                    GitHub
+                  </a>
+                  <a href="https://instagram.com/Tohidkhan6332" target="_blank" rel="noreferrer" 
+                     className="px-4 py-2 bg-pink-600/20 text-pink-400 border border-pink-500/50 rounded-lg hover:bg-pink-600 hover:text-white transition-all">
+                    Instagram
+                  </a>
+                </div>
+
+                {/* Contact Info */}
+                <div className="text-slate-400 text-sm space-y-1">
+                   <p className="flex items-center justify-center gap-2">
+                     <span>📧</span> tohidkhan9050482152@gmail.com
+                   </p>
+                   <p className="flex items-center justify-center gap-2">
+                     <span>📱</span> +91 7849917350 (WhatsApp)
+                   </p>
+                </div>
+              </div>
+            </div>
+            {/* --- END PROFILE SECTION --- */}
+
           </div>
         </div>
       </div>
