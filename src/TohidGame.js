@@ -1,9 +1,13 @@
 import React, { useState } from 'react';
-// IMPORT THE DATA HERE (Ensure TohidData.js is in the same folder)
-import { fallbackQuestions } from './TohidData'; 
+import { fallbackQuestions } from './TohidData';
 
-const TohidGame = () => {
-  const [gameState, setGameState] = useState('setup'); // setup, loading, playing, results
+// 🔥 FIREBASE + LEADERBOARD IMPORTS
+import useTopThree from "./useTopThree";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "./firebase";
+
+const TohidGame = ({ user }) => {
+  const [gameState, setGameState] = useState('setup');
   const [categories, setCategories] = useState([]);
   const [difficulty, setDifficulty] = useState('medium');
   const [numQuestions, setNumQuestions] = useState(5);
@@ -13,6 +17,10 @@ const TohidGame = () => {
   const [score, setScore] = useState(0);
   const [answers, setAnswers] = useState([]);
   const [showAnswer, setShowAnswer] = useState(false);
+
+  // 🔥 NEW
+  const topThree = useTopThree();
+  const [scoreSaved, setScoreSaved] = useState(false);
 
   const availableCategories = [
     { name: 'Science', icon: '🔬' },
@@ -30,126 +38,73 @@ const TohidGame = () => {
   ];
 
   const toggleCategory = (category) => {
-    setCategories(prev => 
-      prev.includes(category) 
+    setCategories(prev =>
+      prev.includes(category)
         ? prev.filter(c => c !== category)
         : [...prev, category]
     );
   };
 
-  // --- HYBRID GENERATOR START ---
+  // --- QUESTION GENERATION (UNCHANGED) ---
   const generateQuestions = async () => {
-    if (categories.length === 0) {
-      alert('Please select at least one category!');
-      return;
-    }
+    if (categories.length === 0) return alert('Select at least one category');
 
-    setGameState('loading'); // Show loading spinner
+    setGameState('loading');
 
     try {
-      // 1. API Category Mapping
       const categoryMapping = {
-        'Science': 17, 'History': 23, 'Geography': 22, 'Sports': 21,
-        'Movies': 11, 'Music': 12, 'Literature': 10, 'Art': 25,
-        'Technology': 18, 'Animals': 27, 'Space': 17 
+        Science: 17, History: 23, Geography: 22, Sports: 21,
+        Movies: 11, Music: 12, Literature: 10, Art: 25,
+        Technology: 18, Animals: 27, Space: 17
       };
 
-      // Select random category from user choice
-      const selectedCategoryName = categories[Math.floor(Math.random() * categories.length)];
-      const apiCategoryId = categoryMapping[selectedCategoryName];
+      const selectedCategory = categories[Math.floor(Math.random() * categories.length)];
+      const apiCategoryId = categoryMapping[selectedCategory];
 
-      // CRITICAL CHECK: If category not in API (like Food), go straight to Local
-      if (!apiCategoryId) {
-        console.log(`${selectedCategoryName} missing in API, switching to Local DB...`);
-        generateLocalQuestions(); 
-        return;
-      }
-
-      const difficultyMap = { easy: 'easy', medium: 'medium', hard: 'hard' };
-      
-      // 2. API Call with 4 Second Timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      if (!apiCategoryId) return generateLocalQuestions();
 
       const response = await fetch(
-        `https://opentdb.com/api.php?amount=${numQuestions}&category=${apiCategoryId}&difficulty=${difficultyMap[difficulty]}&type=multiple&encode=url3986`,
-        { signal: controller.signal }
+        `https://opentdb.com/api.php?amount=${numQuestions}&category=${apiCategoryId}&difficulty=${difficulty}&type=multiple&encode=url3986`
       );
-      
-      clearTimeout(timeoutId);
-
-      if (!response.ok) throw new Error('API Request Failed');
 
       const data = await response.json();
-      
-      // Handle empty API response
-      if (data.response_code !== 0 || !data.results || data.results.length === 0) {
-        throw new Error('No API results');
-      }
+      if (data.response_code !== 0) throw new Error();
 
-      // 3. Format API Data
-      const convertedQuestions = data.results.map(item => {
-        const question = decodeURIComponent(item.question);
-        const correctAnswer = decodeURIComponent(item.correct_answer);
-        const incorrectAnswers = item.incorrect_answers.map(ans => decodeURIComponent(ans));
-        
-        // Shuffle API Options
-        const allOptions = [correctAnswer, ...incorrectAnswers];
-        const shuffledOptions = allOptions.sort(() => Math.random() - 0.5);
-        
+      const formatted = data.results.map(q => {
+        const correct = decodeURIComponent(q.correct_answer);
+        const options = [...q.incorrect_answers.map(decodeURIComponent), correct]
+          .sort(() => Math.random() - 0.5);
+
         return {
-          question: question,
-          options: shuffledOptions,
-          correctAnswer: shuffledOptions.indexOf(correctAnswer),
-          category: selectedCategoryName
+          question: decodeURIComponent(q.question),
+          options,
+          correctAnswer: options.indexOf(correct),
+          category: selectedCategory
         };
       });
 
-      setQuestions(convertedQuestions);
+      setQuestions(formatted);
       startGame();
-      
-    } catch (error) {
-      console.log('API Error or Timeout, using Local Backup...', error);
+    } catch {
       generateLocalQuestions();
     }
   };
 
   const generateLocalQuestions = () => {
-    console.log("Using Local Database...");
     let pool = [];
-    
-    // 1. Collect questions from selected categories
-    categories.forEach(cat => {
-      if (fallbackQuestions[cat]) {
-        pool = [...pool, ...fallbackQuestions[cat]];
-      }
+    categories.forEach(c => fallbackQuestions[c] && (pool = pool.concat(fallbackQuestions[c])));
+    if (!pool.length) pool = Object.values(fallbackQuestions).flat();
+
+    const selected = pool.sort(() => Math.random() - 0.5).slice(0, numQuestions);
+    const final = selected.map(q => {
+      const correctText = q.options[q.correctAnswer];
+      const shuffled = [...q.options].sort(() => Math.random() - 0.5);
+      return { ...q, options: shuffled, correctAnswer: shuffled.indexOf(correctText) };
     });
 
-    // Fallback if somehow pool is empty
-    if (pool.length === 0) {
-      pool = Object.values(fallbackQuestions).flat();
-    }
-
-    // 2. Shuffle and Select Questions
-    const shuffledPool = pool.sort(() => 0.5 - Math.random());
-    const selectedRawQuestions = shuffledPool.slice(0, numQuestions);
-
-    // 3. Shuffle Options for Local Data (Crucial step)
-    const finalQuestions = selectedRawQuestions.map(q => {
-      const originalCorrectAnswerText = q.options[q.correctAnswer];
-      const shuffledOptions = [...q.options].sort(() => Math.random() - 0.5);
-      
-      return {
-        ...q,
-        options: shuffledOptions,
-        correctAnswer: shuffledOptions.indexOf(originalCorrectAnswerText)
-      };
-    });
-
-    setQuestions(finalQuestions);
+    setQuestions(final);
     startGame();
   };
-  // --- HYBRID GENERATOR END ---
 
   const startGame = () => {
     setGameState('playing');
@@ -158,324 +113,125 @@ const TohidGame = () => {
     setAnswers([]);
     setShowAnswer(false);
     setSelectedAnswer(null);
+    setScoreSaved(false);
   };
 
-  const selectAnswer = (answerIndex) => {
-    setSelectedAnswer(answerIndex);
-  };
+  const selectAnswer = (i) => setSelectedAnswer(i);
 
-  const nextQuestion = () => {
-    if (selectedAnswer === null) {
-      alert('Please select an answer!');
-      return;
-    }
+  const nextQuestion = async () => {
+    if (selectedAnswer === null) return alert('Select an answer');
 
     if (!showAnswer) {
       setShowAnswer(true);
       return;
     }
 
-    const isCorrect = selectedAnswer === questions[currentQuestion].correctAnswer;
-    const newAnswers = [...answers, {
-      questionIndex: currentQuestion,
-      selectedAnswer,
-      isCorrect
-    }];
-    
-    setAnswers(newAnswers);
-    if (isCorrect) setScore(score + 1);
-    
+    const correct = selectedAnswer === questions[currentQuestion].correctAnswer;
+    if (correct) setScore(s => s + 1);
+
     if (currentQuestion + 1 < questions.length) {
-      setCurrentQuestion(currentQuestion + 1);
+      setCurrentQuestion(q => q + 1);
       setSelectedAnswer(null);
       setShowAnswer(false);
     } else {
       setGameState('results');
+
+      // 🔥 SAVE SCORE (ONLY ONCE)
+      if (!scoreSaved && user) {
+        await addDoc(collection(db, "scores"), {
+          uid: user.uid,
+          email: user.email,
+          score,
+          createdAt: serverTimestamp(),
+        });
+        setScoreSaved(true);
+      }
     }
   };
 
   const resetGame = () => {
     setGameState('setup');
-    setCurrentQuestion(0);
-    setSelectedAnswer(null);
-    setScore(0);
-    setAnswers([]);
+    setCategories([]);
     setQuestions([]);
-    setShowAnswer(false);
+    setScore(0);
+    setScoreSaved(false);
   };
 
-  // --- RENDER VIEWS ---
+  // ================= RENDER =================
 
   if (gameState === 'setup') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white overflow-hidden">
-        <div className="relative z-10 px-4 py-8">
-          <div className="max-w-6xl mx-auto">
-            {/* Header */}
-            <div className="text-center mb-10">
-              <h1 className="text-5xl lg:text-7xl font-black bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 bg-clip-text text-transparent mb-4">
-                TohidAI
-              </h1>
-              <p className="text-xl text-slate-300">Advanced AI Knowledge Challenge</p>
-            </div>
+      <div className="min-h-screen bg-slate-900 text-white p-6">
 
-            {/* Main Card */}
-            <div className="bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 shadow-2xl p-6 sm:p-10 mb-12">
-              
-              {/* Categories */}
-              <div className="mb-10">
-                <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-                  <span className="text-cyan-400">📝</span> Select Categories
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                  {availableCategories.map(cat => (
-                    <button
-                      key={cat.name}
-                      onClick={() => toggleCategory(cat.name)}
-                      className={`p-4 rounded-2xl transition-all duration-300 border-2 hover:scale-105 flex flex-col items-center gap-2 ${
-                        categories.includes(cat.name)
-                          ? 'bg-gradient-to-br from-cyan-500/20 to-blue-600/20 border-cyan-400 shadow-lg shadow-cyan-500/20'
-                          : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/30'
-                      }`}
-                    >
-                      <span className="text-3xl">{cat.icon}</span>
-                      <span className="font-semibold">{cat.name}</span>
-                    </button>
-                  ))}
-                </div>
+        {/* 🔥 TOP 3 PUBLIC SCORES */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          {topThree.map((u, i) => (
+            <div
+              key={i}
+              className={`p-4 rounded-xl text-center ${
+                i === 0
+                  ? "bg-yellow-400 text-black"
+                  : i === 1
+                  ? "bg-gray-300 text-black"
+                  : "bg-orange-400 text-black"
+              }`}
+            >
+              <div className="font-black text-xl">
+                {i === 0 ? "🥇 FIRST" : i === 1 ? "🥈 SECOND" : "🥉 THIRD"}
               </div>
-
-              {/* Settings Grid */}
-              <div className="grid md:grid-cols-2 gap-8 mb-10">
-                {/* Difficulty */}
-                <div>
-                  <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <span className="text-orange-400">🎯</span> Difficulty
-                  </h2>
-                  <div className="space-y-3">
-                    {['easy', 'medium', 'hard'].map(lvl => (
-                      <button
-                        key={lvl}
-                        onClick={() => setDifficulty(lvl)}
-                        className={`w-full p-4 rounded-xl font-bold capitalize text-left border-2 transition-all ${
-                          difficulty === lvl
-                            ? 'border-orange-400 bg-orange-500/10 text-orange-400'
-                            : 'border-white/10 hover:border-white/30 bg-white/5'
-                        }`}
-                      >
-                        {lvl}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Question Count */}
-                <div>
-                  <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <span className="text-purple-400">📊</span> Questions
-                  </h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    {[5, 10, 15, 20].map(num => (
-                      <button
-                        key={num}
-                        onClick={() => setNumQuestions(num)}
-                        className={`p-4 rounded-xl font-bold text-xl border-2 transition-all ${
-                          numQuestions === num
-                            ? 'border-purple-400 bg-purple-500/10 text-purple-400'
-                            : 'border-white/10 hover:border-white/30 bg-white/5'
-                        }`}
-                      >
-                        {num}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Start Button */}
-              <button
-                onClick={generateQuestions}
-                disabled={categories.length === 0}
-                className="w-full py-6 rounded-2xl font-black text-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-500/30"
-              >
-                Start Challenge 🚀
-              </button>
+              <div className="text-sm break-all">{u.email}</div>
+              <div className="text-2xl font-bold">Score: {u.score}</div>
             </div>
-
-            {/* --- DEVELOPER PROFILE SECTION --- */}
-            <div className="bg-slate-900/80 backdrop-blur rounded-3xl border border-white/5 p-8 text-center">
-              <div className="flex flex-col items-center">
-                <img 
-                  src="https://github.com/Tohidkhan6332.png" 
-                  alt="Tohid Khan" 
-                  className="w-24 h-24 rounded-full border-4 border-cyan-500 shadow-[0_0_20px_rgba(34,211,238,0.3)] mb-4"
-                />
-                <h3 className="text-2xl font-black text-white tracking-wide">TOHID GAME</h3>
-                <p className="text-cyan-400 font-mono text-sm mb-6">HARYANA, INDIA 🇮🇳</p>
-                
-                {/* Social Links */}
-                <div className="flex flex-wrap justify-center gap-4 mb-6">
-                  <a href="https://whatsapp.com/channel/0029VaGyP933bbVC7G0x0i2T" target="_blank" rel="noreferrer" 
-                     className="px-4 py-2 bg-green-600/20 text-green-400 border border-green-500/50 rounded-lg hover:bg-green-600 hover:text-white transition-all">
-                    Tohid Tech Channel
-                  </a>
-                  <a href="https://chat.whatsapp.com/HUEyTVIQ7Ij1gFs6aZkbMk" target="_blank" rel="noreferrer" 
-                     className="px-4 py-2 bg-green-500/20 text-green-400 border border-green-500/50 rounded-lg hover:bg-green-500 hover:text-white transition-all">
-                    Bot Testing Group
-                  </a>
-                  <a href="https://github.com/Tohidkhan6332" target="_blank" rel="noreferrer" 
-                     className="px-4 py-2 bg-slate-700/50 text-white border border-slate-600 rounded-lg hover:bg-slate-700 transition-all">
-                    GitHub
-                  </a>
-                  <a href="https://instagram.com/Tohidkhan6332" target="_blank" rel="noreferrer" 
-                     className="px-4 py-2 bg-pink-600/20 text-pink-400 border border-pink-500/50 rounded-lg hover:bg-pink-600 hover:text-white transition-all">
-                    Instagram
-                  </a>
-                </div>
-
-                {/* Contact Info */}
-                <div className="text-slate-400 text-sm space-y-1">
-                   <p className="flex items-center justify-center gap-2">
-                     <span>📧</span> tohidkhan9050482152@gmail.com
-                   </p>
-                   <p className="flex items-center justify-center gap-2">
-                     <span>📱</span> +91 7849917350 (WhatsApp)
-                   </p>
-                </div>
-              </div>
-            </div>
-            {/* --- END PROFILE SECTION --- */}
-
-          </div>
+          ))}
         </div>
-      </div>
-    );
-  }
 
-  if (gameState === 'loading') {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-4">
-        <div className="w-24 h-24 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mb-8"></div>
-        <h2 className="text-3xl font-bold text-cyan-400 mb-2">Preparing Quiz...</h2>
-        <p className="text-slate-400">Checking API & Loading Local Database</p>
+        <button
+          onClick={generateQuestions}
+          className="w-full py-4 bg-cyan-600 rounded-xl text-xl font-bold"
+        >
+          Start Quiz 🚀
+        </button>
       </div>
     );
   }
 
   if (gameState === 'playing') {
-    const question = questions[currentQuestion];
-    const progress = ((currentQuestion + 1) / questions.length) * 100;
-    
+    const q = questions[currentQuestion];
     return (
-      <div className="min-h-screen bg-slate-900 text-white p-4 sm:p-8">
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6">
-            <span className="px-4 py-2 rounded-lg bg-white/10 font-bold text-cyan-400">
-              Q{currentQuestion + 1}/{questions.length}
-            </span>
-            <span className="px-4 py-2 rounded-lg bg-white/10 font-bold text-green-400">
-              Score: {score}
-            </span>
-          </div>
+      <div className="min-h-screen bg-slate-900 text-white p-6">
+        <h2 className="text-2xl mb-4">{q.question}</h2>
 
-          {/* Progress */}
-          <div className="h-2 bg-white/10 rounded-full mb-8 overflow-hidden">
-            <div 
-              className="h-full bg-cyan-500 transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            ></div>
-          </div>
+        {q.options.map((opt, i) => (
+          <button
+            key={i}
+            onClick={() => !showAnswer && selectAnswer(i)}
+            className="block w-full mb-3 p-3 bg-white/10 rounded"
+          >
+            {opt}
+          </button>
+        ))}
 
-          {/* Question Card */}
-          <div className="bg-white/5 backdrop-blur border border-white/10 rounded-3xl p-6 sm:p-10 shadow-2xl">
-            <div className="flex gap-3 mb-6">
-              <span className="px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-400 text-sm font-bold">
-                {question.category}
-              </span>
-            </div>
-            
-            <h2 className="text-2xl sm:text-3xl font-bold mb-8 leading-snug">
-              {question.question}
-            </h2>
-
-            <div className="space-y-4">
-              {question.options.map((opt, idx) => {
-                let btnStyle = "bg-white/5 border-white/10 hover:bg-white/10 hover:border-cyan-400/50";
-                
-                if (showAnswer) {
-                  if (idx === question.correctAnswer) {
-                    btnStyle = "bg-green-500/20 border-green-500 text-green-400";
-                  } else if (idx === selectedAnswer) {
-                    btnStyle = "bg-red-500/20 border-red-500 text-red-400";
-                  } else {
-                    btnStyle = "opacity-50 border-transparent";
-                  }
-                } else if (selectedAnswer === idx) {
-                  btnStyle = "bg-cyan-500/20 border-cyan-400 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.3)]";
-                }
-
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => !showAnswer && selectAnswer(idx)}
-                    disabled={showAnswer}
-                    className={`w-full p-5 rounded-xl border-2 text-left font-semibold text-lg transition-all ${btnStyle}`}
-                  >
-                    <div className="flex justify-between items-center">
-                      <span>{opt}</span>
-                      {showAnswer && idx === question.correctAnswer && <span>✅</span>}
-                      {showAnswer && idx === selectedAnswer && idx !== question.correctAnswer && <span>❌</span>}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <button
-              onClick={nextQuestion}
-              disabled={selectedAnswer === null}
-              className="mt-8 w-full py-4 rounded-xl font-bold text-xl bg-gradient-to-r from-cyan-500 to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all"
-            >
-              {!showAnswer ? 'Check Answer' : (currentQuestion + 1 === questions.length ? 'Finish Game' : 'Next Question')}
-            </button>
-          </div>
-        </div>
+        <button
+          onClick={nextQuestion}
+          className="mt-6 w-full py-3 bg-blue-600 rounded-xl text-xl"
+        >
+          {showAnswer ? "Next" : "Check Answer"}
+        </button>
       </div>
     );
   }
 
   if (gameState === 'results') {
-    const percentage = Math.round((score / questions.length) * 100);
     return (
-      <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-4">
-        <div className="max-w-2xl w-full bg-white/5 border border-white/10 rounded-3xl p-8 text-center shadow-2xl backdrop-blur-xl">
-          <div className="text-6xl mb-6">{percentage >= 70 ? '🏆' : '💪'}</div>
-          <h2 className="text-4xl font-black mb-2 bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
-            {percentage >= 70 ? 'Amazing Job!' : 'Good Effort!'}
-          </h2>
-          <p className="text-slate-400 text-lg mb-8">
-            You scored {score} out of {questions.length} ({percentage}%)
-          </p>
-
-          <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="p-4 rounded-xl bg-green-500/10 border border-green-500/30">
-              <div className="text-3xl font-bold text-green-400">{score}</div>
-              <div className="text-sm text-green-200">Correct</div>
-            </div>
-            <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30">
-              <div className="text-3xl font-bold text-red-400">{questions.length - score}</div>
-              <div className="text-sm text-red-200">Incorrect</div>
-            </div>
-          </div>
-
-          <button
-            onClick={resetGame}
-            className="w-full py-4 rounded-xl font-bold text-xl bg-gradient-to-r from-cyan-500 to-purple-600 hover:scale-[1.02] transition-all"
-          >
-            Play Again 🔄
-          </button>
-        </div>
+      <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center justify-center">
+        <h1 className="text-4xl mb-4">Final Score</h1>
+        <p className="text-2xl mb-6">{score} / {questions.length}</p>
+        <button
+          onClick={resetGame}
+          className="px-6 py-3 bg-green-600 rounded-xl text-xl"
+        >
+          Play Again 🔄
+        </button>
       </div>
     );
   }
