@@ -26,7 +26,8 @@ const TohidGame = () => {
     { name: 'Technology', icon: '💻' },
     { name: 'Food', icon: '🍕' },
     { name: 'Animals', icon: '🦁' },
-    { name: 'Space', icon: '🚀' }
+    { name: 'Space', icon: '🚀' },
+    { name: 'Psychology', icon: '🧠' } // Added Psychology
   ];
 
   const toggleCategory = (category) => {
@@ -51,7 +52,7 @@ const TohidGame = () => {
       const categoryMapping = {
         'Science': 17, 'History': 23, 'Geography': 22, 'Sports': 21,
         'Movies': 11, 'Music': 12, 'Literature': 10, 'Art': 25,
-        'Technology': 18, 'Animals': 27, 'Space': 17 
+        'Technology': 18, 'Animals': 27, 'Space': 17, 'Psychology': 20
       };
 
       // Select random category from user choice
